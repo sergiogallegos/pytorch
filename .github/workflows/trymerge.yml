@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           token: ${{ secrets.MERGEBOT_TOKEN }}
 
       - name: Setup committer id
