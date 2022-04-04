@@ -11,6 +11,11 @@ class Normal : public torch::lazy::TsNode {
  public:
   Normal(const torch::lazy::Value& self, const double& mean, const double& std, std::vector<torch::lazy::Shape>&& shapes);
 
+  bool Equal(const torch::lazy::Value& self, const double& mean,
+             const double& std, std::vector<torch::lazy::Shape>&& shapes) {
+    return false;
+  }
+
   std::string ToString() const override;
   torch::lazy::TSOpVector Lower(std::shared_ptr<torch::jit::GraphFunction> function,
                    torch::lazy::TSLoweringContext* loctx) const override;

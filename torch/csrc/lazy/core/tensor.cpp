@@ -11,6 +11,7 @@
 #include <torch/csrc/lazy/ts_backend/ops/cast.h>
 #include <torch/csrc/lazy/ts_backend/ops/device_data.h>
 #include <torch/csrc/lazy/ts_backend/ops/scalar.h>
+#include "lazy/core/internal_ops/ltc_ops.h"
 
 namespace torch {
 namespace lazy {
@@ -197,6 +198,12 @@ void LazyTensor::SetIrValue(Value ir_value) {
   }
 }
 
+void LazyTensor::ResetIrValue() {
+  AssignIrValue(Value());
+  data()->view = nullptr;
+  data()->tensor_data = c10::nullopt;
+}
+
 void LazyTensor::SetInPlaceIrValue(Value ir_value) {
   auto tensor_shape = shape();
   if (tensor_shape.Get().scalar_type() !=
@@ -216,7 +223,7 @@ void LazyTensor::TryLimitGraphSize() {
       LazyGraphExecutor::Get()->IncTrimCounter() %
               FLAGS_torch_lazy_trim_graph_check_frequency ==
           0) {
-    size_t graph_size = Util::GetGraphSize({data()->ir_value.node.get()});
+    size_t graph_size = Util::GetGraphSize({data()->ir_value.node().get()});
     if (graph_size > FLAGS_torch_lazy_trim_graph_size) {
       TORCH_LAZY_COUNTER("TrimIrGraph", 1);
       ApplyPendingGraph();
@@ -225,6 +232,7 @@ void LazyTensor::TryLimitGraphSize() {
 }
 
 Value LazyTensor::GetIrValue() const {
+  TORCH_LAZY_TIMED("GetIrValue");
   Value ir_value = CurrentIrValue();
   if (ir_value) {
     return ir_value;
@@ -423,7 +431,8 @@ void LazyTensor::UpdateFromTensorOut(const LazyTensorPtr& tensor) {
 Value LazyTensor::CreateTensorNode(BackendDataPtr data, bool read_only) const {
   data->SetInfo(std::make_shared<LazyGraphExecutor::DeviceDataInfo>(
       GetUniqueId(), read_only));
-  return MakeNode<DeviceData>(std::move(data));
+  NodePtr node = nullptr;
+  return DeviceData::Create(std::move(data));
 }
 
 std::vector<LazyTensorPtr> LazyTensor::MakeOutputTensors(NodePtr node) const {

@@ -13,6 +13,10 @@ class GetDimensionsSize : public torch::lazy::TsNode {
   GetDimensionsSize(const torch::lazy::Value& input,
                     std::vector<int64_t> dimensions);
 
+  bool Equal(const torch::lazy::Value& input, std::vector<int64_t> dimensions) {
+    return false;
+  }
+
   std::string ToString() const override;
 
   const std::vector<int64_t>& sizes() const { return dimensions_; }

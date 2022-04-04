@@ -1,26 +1,27 @@
 #include "lazy_tensor_core/csrc/tensor_aten_ops.h"
 
 #include <ATen/InferSize.h>
+#include <torch/csrc/lazy/core/config.h>
 #include <torch/csrc/lazy/core/helpers.h>
-#include <torch/csrc/lazy/ts_backend/ops/cast.h>
-#include <torch/csrc/lazy/ts_backend/ops/expand.h>
 #include <torch/csrc/lazy/core/ir_util.h>
+#include <torch/csrc/lazy/core/lazy_graph_executor.h>
 #include <torch/csrc/lazy/core/metrics.h>
+#include <torch/csrc/lazy/core/tensor.h>
 #include <torch/csrc/lazy/core/util.h>
 #include <torch/csrc/lazy/core/view_ops/as_strided.h>
 #include <torch/csrc/lazy/core/view_ops/permute.h>
 #include <torch/csrc/lazy/core/view_ops/view.h>
+#include <torch/csrc/lazy/ts_backend/ops/cast.h>
+#include <torch/csrc/lazy/ts_backend/ops/expand.h>
 
 #include <algorithm>
 #include <functional>
 
 #include "c10/util/Optional.h"
-#include <torch/csrc/lazy/core/lazy_graph_executor.h>
 #include "lazy_tensor_core/csrc/ops/squeeze.h"
 #include "lazy_tensor_core/csrc/ops/ts_native_batch_norm_backward.h"
 #include "lazy_tensor_core/csrc/ops/ts_native_batch_norm_forward.h"
 #include "lazy_tensor_core/csrc/ops/unsqueeze.h"
-#include <torch/csrc/lazy/core/tensor.h>
 #include "lazy_tensor_core/csrc/tensor_ops.h"
 #include "lazy_tensor_core/csrc/ts_backend/LazyLazyIr.h"
 #include "torch/csrc/autograd/variable.h"
@@ -161,10 +162,18 @@ std::tuple<torch::lazy::LazyTensorPtr, torch::lazy::LazyTensorPtr, torch::lazy::
       GetIrValueOrDefault(running_mean, 0, features_shape, input->GetDevice());
   torch::lazy::Value running_var_value =
       GetIrValueOrDefault(running_var, 0, features_shape, input->GetDevice());
-  torch::lazy::NodePtr node =
-      torch::lazy::MakeNode<ir::ops::TSNativeBatchNormForward>(
-          input->GetIrValue(), weight_value, bias_value, running_mean_value,
-          running_var_value, training, momentum, eps);
+  torch::lazy::NodePtr node = nullptr;
+  if (FLAGS_torch_lazy_reuse_ir) {
+    node = torch::lazy::ReuseNode<ir::ops::TSNativeBatchNormForward>(
+        torch::lazy::OpKind(at::aten::native_batch_norm), input->GetIrValue(),
+        weight_value, bias_value, running_mean_value, running_var_value,
+        training, momentum, eps);
+  }
+  if (!node) {
+    node = torch::lazy::MakeNode<ir::ops::TSNativeBatchNormForward>(
+        input->GetIrValue(), weight_value, bias_value, running_mean_value,
+        running_var_value, training, momentum, eps);
+  }
   torch::lazy::LazyTensorPtr output = torch::lazy::LazyTensor::Create(torch::lazy::Value(node, 0), input->GetDevice());
   torch::lazy::LazyTensorPtr running_mean_output =
       torch::lazy::LazyTensor::Create(torch::lazy::Value(node, 1), input->GetDevice());

@@ -22,6 +22,24 @@ class TSNativeBatchNormBackward : public torch::lazy::TsNode {
                             const torch::lazy::Value& save_invstd, bool training, double eps,
                             std::array<bool, 3> output_mask);
 
+  bool Equal(const torch::lazy::Value& grad_out,
+             const torch::lazy::Value& input, const torch::lazy::Value& weight,
+             const torch::lazy::Value& running_mean,
+             const torch::lazy::Value& running_var,
+             const torch::lazy::Value& save_mean,
+             const torch::lazy::Value& save_invstd, bool training, double eps,
+             std::array<bool, 3> output_mask) {
+    return false;
+  }
+
+  bool Equal(const torch::lazy::Value& grad_out,
+             const torch::lazy::Value& input, const torch::lazy::Value& weight,
+             const torch::lazy::Value& save_mean,
+             const torch::lazy::Value& save_invstd, bool training, double eps,
+             std::array<bool, 3> output_mask) {
+    return false;
+  }
+
   std::string ToString() const override;
 
   bool training() const { return training_; }

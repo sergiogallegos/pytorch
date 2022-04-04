@@ -53,6 +53,8 @@ import lazy_tensor_core
 import lazy_tensor_core.core.lazy_model as ltm
 import lazy_tensor_core.debug.metrics as metrics
 lazy_tensor_core._LAZYC._ltc_init_ts_backend()
+#lazy_tensor_core._LAZYC._ltc_enable_thread_pool()
+lazy_tensor_core._LAZYC._ltc_set_reuse_ir(True)
 
 os.environ["KALDI_ROOT"] = "/tmp"  # avoids some spam
 
@@ -255,8 +257,11 @@ class LazySync:
         if current_device == 'cuda':
             torch.cuda.synchronize()
 
-def dump_lazy_metrics(reset=False):
-    met = {name: int(metrics.counter_value(name)) for name in metrics.counter_names() if int(metrics.counter_value(name) > 0)}
+def dump_lazy_metrics(args, reset=False):
+    print({name: int(metrics.counter_value(name))for name in metrics.counter_names() if
+        int(metrics.counter_value(name) > 0) or name.startswith("Metric:")})
+    met = {name: metrics.metric_data(name)[1]/(args.repeat * args.inner_loop_repeat * 1000.0)
+            for name in metrics.metric_names() if "::" in name}
     if reset:
         metrics.reset_metrics()
     return met
@@ -345,7 +350,7 @@ def lazy_overhead_experiment(args, results, benchmark, lazy_benchmark):
         timed(args, lazy_benchmark, sync=LazySync(sync_every_iter=True))
     warmup_time = time.perf_counter() - warmup0
     bench0 = time.perf_counter()
-    dump_lazy_metrics(reset=True)
+    dump_lazy_metrics(args, reset=True)
     for rep in range(args.repeat):
         # interleave the runs to handle frequency scaling and load changes
         _, timings[rep, 0] = timed(args, benchmark, sync=ref_sync(sync_every_iter=True))
@@ -353,7 +358,7 @@ def lazy_overhead_experiment(args, results, benchmark, lazy_benchmark):
         ltm.wait_device_ops()
         if current_device == 'cuda':
             torch.cuda.synchronize()
-    lazy_metrics = dump_lazy_metrics(reset=True)
+    lazy_metrics = dump_lazy_metrics(args, reset=True)
     bench_time = time.perf_counter() - bench0
     pvalue = ttest_ind(timings[:, 0], timings[:, 1]).pvalue
     median = np.median(timings, axis=0)
@@ -390,21 +395,27 @@ def lazy_compute_experiment(args, experiment, results, benchmark, lazy_benchmark
     warmup_time = time.perf_counter() - warmup0
 
     # fresh metrics for each timed run
-    dump_lazy_metrics(reset=True)
+    dump_lazy_metrics(args, reset=True)
     bench0 = time.perf_counter()
     for rep in range(args.repeat):
         # measure
         _, timings[rep, 0] = timed(args, benchmark, times=args.inner_loop_repeat, sync=ref_sync)
         _, timings[rep, 1] = timed(args, lazy_benchmark, times=args.inner_loop_repeat, sync=lazy_sync)
     bench_time = time.perf_counter() - bench0
-    lazy_metrics = dump_lazy_metrics(reset=True)
+    lazy_metrics = dump_lazy_metrics(args, reset=True)
     if 'CachedCompile' not in lazy_metrics or lazy_metrics['CachedCompile'] != args.repeat * args.inner_loop_repeat:
         print("WARNING: lazy cached compile count indicates fallbacks, or something else")
     fallbacks = {k: v for (k, v) in lazy_metrics.items() if 'aten::' in k}
     if len(fallbacks):
         print(f"WARNING: lazy-eager fallbacks detected for [{fallbacks}]")
     if args.dump_lazy_counters:
-        print(lazy_metrics)
+        str = benchmark.name
+        header = "####"
+        for key, value in lazy_metrics.items():
+            header += f",{key}"
+            str += f",{value}"
+        print(header)
+        print(str)
     pvalue = ttest_ind(timings[:, 0], timings[:, 1]).pvalue
     median = np.median(timings, axis=0)
     speedup = median[0] / median[1]
@@ -423,14 +434,21 @@ def lazy_compute_experiment(args, experiment, results, benchmark, lazy_benchmark
 
 def check_eval_correctness(args, benchmark, lazy_benchmark, name):
     try:
+        correct_result = []
+        lazy_result = []
         set_seeds()
         model, example_inputs = benchmark.get_module()
         model.eval()
-        correct_result = call_model_with(model, example_inputs)
+        for i in range(args.repeat):
+            correct_result.append(call_model_with(model, example_inputs))
+
         set_seeds()
         lazy_model, lazy_inputs = lazy_benchmark.get_module()
         lazy_model.eval()
-        lazy_result = call_model_with(lazy_model, lazy_inputs)
+        for i in range(args.repeat):
+            lazy_result.append(call_model_with(lazy_model, lazy_inputs))
+            ltm.mark_step()
+
         if not check_results(correct_result, lazy_result, args.device, args.allclose_atol):
             print(f"INCORRECT: {name}")
             save_error(name, args.test, "Incorrect results.", args.output_dir)
@@ -587,10 +605,10 @@ if __name__ == "__main__" :
     parser.add_argument("--filter", "-k", action="append", default=[], help="filter benchmarks")
     parser.add_argument("--exclude", "-x", action="append", default=[], help="filter benchmarks")
     parser.add_argument("--device", "-d", default='cuda', help="cpu or cuda")
-    parser.add_argument("--warmup", type=int, default=4, help="number of warmup runs")
+    parser.add_argument("--warmup", type=int, default=100, help="number of warmup runs")
     parser.add_argument("--timeout", type=int, default=60 * 10, help="time allocated to each model")
-    parser.add_argument("--repeat", "-n", type=int, default=4, help="number of timing runs (samples)")
-    parser.add_argument("--inner_loop_repeat", type=int, default=10, help="repeat the computation this many times per sample")
+    parser.add_argument("--repeat", "-n", type=int, default=10, help="number of timing runs (samples)")
+    parser.add_argument("--inner_loop_repeat", type=int, default=100, help="repeat the computation this many times per sample")
     parser.add_argument("--fuser", type=str, choices=['noopt', 'fuser0', 'fuser1', 'fuser2'], help="0=legacy, 1=nnc, 2=nvfuser")
     parser.add_argument("--test", type=str, choices=['eval', 'train'], default='eval')
     parser.add_argument("--verbose", action='store_true')
@@ -660,8 +678,8 @@ if __name__ == "__main__" :
                         if not check_eval_correctness(args, benchmark, lazy_benchmark, current_name):
                             exit(3)
 
-                    lazy_overhead_experiment(args, results, benchmark, lazy_benchmark)
-                    lazy_compute_experiment(args, f"amortized {args.inner_loop_repeat}x", results, benchmark, lazy_benchmark)
+                    #lazy_overhead_experiment(args, results, benchmark, lazy_benchmark)
+                    #lazy_compute_experiment(args, f"amortized {args.inner_loop_repeat}x", results, benchmark, lazy_benchmark)
                     lazy_compute_experiment(args, "unamortized", results, benchmark, lazy_benchmark, sync_every_iter=True)
 
         except Exception as e:

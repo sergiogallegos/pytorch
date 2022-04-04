@@ -119,6 +119,8 @@ class TORCH_API LazyTensor : public c10::intrusive_ptr_target {
   void SetIrValue(Value ir_value);
   void SetInPlaceIrValue(Value ir_value);
 
+  void ResetIrValue();
+
   void SetSubView(ViewInfo view_info) const;
 
   c10::optional<at::Tensor> CurrentTensorData() const;

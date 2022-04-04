@@ -52,11 +52,11 @@ class TORCH_API TsNode : public lazy::Node {
 
   static hash_t GetOpHash(OpKind op, const Shape& shape, hash_t hash_seed, bool bakeInSizes);
 
-  const std::vector<Output>& operands() const override {
-    return operands_as_outputs_;
+  const std::vector<Value>& operands() const override {
+    return operands_;
   }
-  const Output& operand(size_t i) const override {
-    return operands_as_outputs_.at(i);
+  const Value& operand(size_t i) const override {
+    return operands_.at(i);
   }
 
   const std::string& getPythonStacktrace() const {
@@ -71,11 +71,11 @@ class TORCH_API TsNode : public lazy::Node {
 
  private:
   // Adds node's index output number as operand.
-  void AddOperand(NodePtr node, size_t index = 0);
+  void AddOperand(const Value& value);
 
   std::vector<Shape> shapes_;
   // A node holds a real reference to its operands.
-  std::vector<NodePtr> operands_;
+  std::vector<Value> operands_;
   // Outputs do not hold references on the nodes, and neither do the uses, since
   // otherwise we get into circular reference counting.
   std::vector<Output> operands_as_outputs_;

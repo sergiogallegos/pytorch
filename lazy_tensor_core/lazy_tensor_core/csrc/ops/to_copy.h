@@ -57,9 +57,9 @@ class ToCopy : public torch::lazy::TsNode {
     return ss.str();
   }
 
-  torch::lazy::TSOpVector Lower(std::shared_ptr<torch::jit::GraphFunction> function,
-                   torch::lazy::TSLoweringContext* loctx) const override {
-        std::vector<torch::jit::NamedValue> arguments;
+torch::lazy::TSOpVector Lower(std::shared_ptr<torch::jit::GraphFunction> function,
+                torch::lazy::TSLoweringContext* loctx) const override {
+    std::vector<torch::jit::NamedValue> arguments;
     std::vector<torch::jit::NamedValue> kwarguments;
     arguments.reserve(1);
     kwarguments.reserve(6);

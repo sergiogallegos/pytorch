@@ -59,7 +59,7 @@ TsNode::TsNode(OpKind op, OpList operands, std::vector<Shape>&& shapes,
       continue;
     }
 
-    AddOperand(operand.node, operand.index);
+    AddOperand(operand);
   }
 }
 
@@ -127,10 +127,13 @@ hash_t TsNode::GetOpHash(OpKind op, const Shape& shape, hash_t hash_seed, bool b
   return HashCombine(h, hash_seed);
 }
 
-void TsNode::AddOperand(NodePtr node, size_t index) {
-  CHECK_LT(index, node->num_outputs());
-  operands_.push_back(std::move(node));
-  operands_as_outputs_.emplace_back(operands_.back().get(), index);
+void TsNode::AddOperand(const Value& value) {
+  operands_.push_back(value);
+  operands_as_outputs_.push_back(Output(value));
+  // NodePtr node = value.node();
+  // operands_node_list_index_.push_back(value.node_list_index_.value());
+  // CHECK_LT(value.index, node->num_outputs());
+  // operands_as_outputs_.emplace_back(node.get(), value.index);
 }
 
 TSOpVector TsNode::Lower(std::shared_ptr<torch::jit::GraphFunction> function,

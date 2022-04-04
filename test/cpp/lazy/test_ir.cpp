@@ -16,11 +16,11 @@ class TestLeafNode : public Node {
         param_(param) {}
   ~TestLeafNode() override = default;
 
-  const std::vector<Output>& operands() const override {
+  const std::vector<Value>& operands() const override {
     TORCH_INTERNAL_ASSERT(false, "Can't access operands of leaf node");
   }
 
-  const Output& operand(size_t i) const override {
+  const Value& operand(size_t i) const override {
     TORCH_INTERNAL_ASSERT(false, "Can't access operand[i] of leaf node");
   }
   const Shape& shape(size_t i) const override { return shape_; }

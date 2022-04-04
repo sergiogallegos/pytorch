@@ -16,27 +16,25 @@ class IrUtilNode : public Node {
   ~IrUtilNode() override = default;
 
   void AddOperand(Value v) {
-    if (!v.node) {
+    if (!v.node()) {
       return;
     }
-    operands_as_outputs_.emplace_back(v.node.get(), v.index);
-    operands_.push_back(std::move(v.node));
+    operands_.push_back(v);
   }
 
-  const std::vector<Output>& operands() const override {
-    return operands_as_outputs_;
+  const std::vector<Value>& operands() const override {
+    return operands_;
   }
 
-  const Output& operand(size_t i) const override {
-    return operands_as_outputs_.at(i);
+  const Value& operand(size_t i) const override {
+    return operands_.at(i);
   }
 
   const Shape& shape(size_t i) const override { return shape_; }
   c10::ArrayRef<Shape> shapes() const override { return {shape_}; }
 
  private:
-  std::vector<NodePtr> operands_;
-  std::vector<Output> operands_as_outputs_;
+  std::vector<Value> operands_;
   Shape shape_;
 };
 

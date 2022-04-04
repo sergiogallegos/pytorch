@@ -18,24 +18,24 @@ std::vector<Node*> Util::ComputePostOrder(const Node* node, EmissionMap* emap) {
     if (it == emap->end()) {
       (*emap)[node] = kEmitting;
       for (auto& output : node->operands()) {
-        auto oit = emap->find(output.node);
+        auto oit = emap->find(output.node().get());
         if (oit == emap->end()) {
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-          queue.push_back(const_cast<Node*>(output.node));
+          queue.push_back(const_cast<Node*>(output.node().get()));
         } else {
           TORCH_CHECK(
               oit->second != kEmitting,
               "Graph loop found at ",
-              output.node->ToString());
+              output.node().get()->ToString());
         }
       }
     } else if (it->second == kEmitting) {
       for (auto& output : node->operands()) {
-        auto oit = emap->find(output.node);
+        auto oit = emap->find(output.node().get());
         TORCH_CHECK(
             oit != emap->end() && oit->second == kEmitted,
             "Graph loop found at ",
-            output.node->ToString());
+            output.node().get()->ToString());
       }
       (*emap)[node] = kEmitted;
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)

@@ -166,6 +166,7 @@ std::string GenerateDotNodeSpec(
 
 std::string GenerateTextNodeSpec(const Node* node, const NodeIdMap& id_map) {
   std::stringstream ss;
+  ss << "hash=" << HashToString(node->hash()) << ", ";
   if (auto tsnode = dynamic_cast<const TsNode*>(node)) {
     ss << tsnode->shapes() << " ";
   } else {
@@ -177,8 +178,8 @@ std::string GenerateTextNodeSpec(const Node* node, const NodeIdMap& id_map) {
     if (count > 0) {
       ss << ", ";
     }
-    ss << "%" << id_map.at(output.node);
-    if (output.node->num_outputs() > 1) {
+    ss << "%" << id_map.at(output.node().get());
+    if (output.node()->num_outputs() > 1) {
       ss << "." << output.index;
     }
     ++count;
