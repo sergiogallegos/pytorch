@@ -13,7 +13,7 @@ from torch._namedtensor_internals import (
     update_names, check_serializing_named_tensor, resolve_ellipsis,
     unzip_namedshape, single_ellipsis_index, is_ellipsis)
 from torch.overrides import (
-    has_torch_function, has_torch_function_unary, has_torch_function_variadic,
+    has_torch_function_unary, has_torch_function_variadic,
     handle_torch_function, get_default_nowrap_functions)
 import torch.utils.hooks as hooks
 
@@ -24,11 +24,12 @@ def _wrap_type_error_to_not_implemented(f):
     assigned = functools.WRAPPER_ASSIGNMENTS
 
     @functools.wraps(f, assigned=assigned)
-    def wrapped(*args, **kwargs):
-        if has_torch_function(args):
-            return handle_torch_function(wrapped, args, *args, **kwargs)
+    def wrapped(self, other):
+        if has_torch_function_variadic(self, other):
+            return handle_torch_function(wrapped, (self, other), self, other)
+
         try:
-            return f(*args, **kwargs)
+            return f(self, other)
         except TypeError:
             return NotImplemented
     return wrapped
@@ -615,14 +616,10 @@ class Tensor(torch._C._TensorBase):
 
     @_wrap_type_error_to_not_implemented
     def __rsub__(self, other):
-        if has_torch_function_variadic(self, other):
-            return handle_torch_function(Tensor.__rsub__, (self, other), self, other)
         return _C._VariableFunctions.rsub(self, other)
 
     @_wrap_type_error_to_not_implemented
     def __rdiv__(self, other):
-        if has_torch_function_variadic(self, other):
-            return handle_torch_function(Tensor.__rdiv__, (self, other), self, other)
         return self.reciprocal() * other
 
     __rtruediv__ = __rdiv__
@@ -632,8 +629,6 @@ class Tensor(torch._C._TensorBase):
 
     @_wrap_type_error_to_not_implemented
     def __rmod__(self, other):
-        if has_torch_function_variadic(self, other):
-            return handle_torch_function(Tensor.__rmod__, (self, other), self, other)
         return torch.remainder(other, self)
 
     def __format__(self, format_spec):
@@ -681,8 +676,6 @@ class Tensor(torch._C._TensorBase):
 
     @_wrap_type_error_to_not_implemented
     def __rmatmul__(self, other):
-        if has_torch_function_variadic(self, other):
-            return handle_torch_function(Tensor.__rmatmul__, (self, other), self, other)
         return torch.matmul(other, self)
 
     __pos__ = _C._TensorBase.positive
