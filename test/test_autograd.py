@@ -7052,6 +7052,33 @@ class TestAutogradForwardMode(TestCase):
         # context manager. If you do, there is something wrong with the
         # locking of the forward ad level most likely
 
+    def test_maximum_minimum(self):
+        # TODO: This should really be covered by OpInfo but it isn't. The problem
+        # is that our gradient tests test using float64 but it should also test
+        # float32
+        x = torch.randn(3, dtype=torch.float32)
+        y = torch.randn(3, dtype=torch.float32)
+        tx = torch.randn(3, dtype=torch.float32)
+        ty = torch.randn(3, dtype=torch.float32)
+
+        with fwAD.dual_level():
+            x_dual = fwAD.make_dual(x, tx)
+            y_dual = fwAD.make_dual(y, ty)
+            result = torch.maximum(x_dual, y_dual)
+            _, result_tangent = fwAD.unpack_dual(result)
+
+        expected = torch.where(x > y, tx, ty)
+        self.assertEqual(result_tangent, expected)
+
+        with fwAD.dual_level():
+            x_dual = fwAD.make_dual(x, tx)
+            y_dual = fwAD.make_dual(y, ty)
+            result = torch.minimum(x_dual, y_dual)
+            _, result_tangent = fwAD.unpack_dual(result)
+
+        expected = torch.where(x < y, tx, ty)
+        self.assertEqual(result_tangent, expected)
+
 # Generic device type autograd tests.
 class TestAutogradDeviceType(TestCase):
 
