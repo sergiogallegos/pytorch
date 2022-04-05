@@ -30,7 +30,6 @@ Node* findNode(std::shared_ptr<Graph>& g, Symbol k) {
   }
   TORCH_INTERNAL_ASSERT(false, "Couldn't find node");
 }
-
 } // namespace
 
 TEST(ShapeAnalysisTest, DynamicShapesFusion) {
@@ -290,6 +289,128 @@ TEST(ShapeAnalysisTest, MovingConstantOutOfFusionGroups) {
       ->check("block1")
       ->check("FallbackGraph")
       ->run(*g);
+}
+
+namespace {
+
+struct TORCH_API CanonicalizedSymbolicShape {
+  CanonicalizedSymbolicShape(
+      c10::SymbolicShape& orig_shape,
+      std::unordered_map<int64_t, int64_t>& ss_map) {
+    init(orig_shape, ss_map);
+  }
+
+  CanonicalizedSymbolicShape(c10::SymbolicShape& orig_shape) {
+    std::unordered_map<int64_t, int64_t> new_ssmap;
+    init(orig_shape, new_ssmap);
+  }
+
+ private:
+  c10::optional<std::vector<int64_t>> values_;
+  std::vector<bool> is_symbolic_;
+
+  void init(
+      c10::SymbolicShape& orig_shape,
+      std::unordered_map<int64_t, int64_t>& ss_map) {
+    auto sizes = orig_shape.sizes();
+    if (!sizes) {
+      values_ = c10::nullopt;
+      return;
+    }
+    values_ = std::vector<int64_t>();
+    int64_t cur_symbolic_index = -(int64_t)ss_map.size() - 1;
+    for (auto& cur_shape : *sizes) {
+      if (cur_shape.is_static()) {
+        is_symbolic_.emplace_back(false);
+        values_->push_back(cur_shape.static_size());
+      } else {
+        // Check for aliasing
+        is_symbolic_.emplace_back(true);
+        auto it = ss_map.find(cur_shape.value());
+
+        if (it == ss_map.end()) {
+          values_->push_back(cur_symbolic_index);
+          ss_map.insert({cur_shape.value(), cur_symbolic_index});
+          cur_symbolic_index--;
+        } else {
+          values_->push_back(it->second);
+        }
+      }
+    }
+  }
+
+  friend bool operator==(
+      const CanonicalizedSymbolicShape& a,
+      const CanonicalizedSymbolicShape& b) {
+    if (a.values_.has_value() != b.values_.has_value()) {
+      return false;
+    }
+    if (!a.values_.has_value()) {
+      return true;
+    }
+    return (
+        a.values_.value() == b.values_.value() &&
+        a.is_symbolic_ == b.is_symbolic_);
+  };
+};
+
+void assertShapeEqual(
+    c10::optional<std::vector<c10::SymbolicShape>>& actual,
+    std::vector<c10::optional<int64_t>> expected) {
+  ASSERT_TRUE(actual.has_value());
+  ASSERT_EQ(actual->size(), 1);
+  auto a_canonical = CanonicalizedSymbolicShape(actual->at(0));
+
+  auto symb_expected = c10::SymbolicShape(expected);
+  auto b_canonical = CanonicalizedSymbolicShape(symb_expected);
+  ASSERT_EQ(a_canonical, b_canonical);
+}
+
+} // namespace
+
+TEST(ShapeAnalysisTest, SymbolicShapeAPI) {
+  // Figure out how to fetch a function schema
+
+  // Ask someone else how to create a function schema / operator in C++
+  std::shared_ptr<Operator> op = getOperatorForLiteral(
+      "aten::sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor");
+  const FunctionSchema* schema = &(op->schema());
+
+  c10::IValue const_size_1 = std::vector<int64_t>{64, 56, 56};
+  c10::IValue const_size_2 = std::vector<int64_t>{1, 56, 56};
+
+  // Check vector initializer list syntax
+  c10::optional<int64_t> sym_dim = c10::nullopt;
+  c10::SymbolicShape ss_concrete =
+      std::vector<c10::optional<int64_t>>{1, 56, 56};
+  c10::SymbolicShape ss1 = std::vector<c10::optional<int64_t>>{sym_dim, 56, 56};
+  c10::SymbolicShape ss2 =
+      std::vector<c10::optional<int64_t>>{64, sym_dim, sym_dim};
+  c10::SymbolicShape ss3 =
+      std::vector<c10::optional<int64_t>>{sym_dim, sym_dim, sym_dim, sym_dim};
+
+  auto res = calculateSymbolicShapesOnOp(
+      schema, std::vector<SSAInput>{const_size_1, const_size_1});
+  assertShapeEqual(res, {64, 56, 56});
+
+  res = calculateSymbolicShapesOnOp(
+      schema, std::vector<SSAInput>{const_size_1, const_size_2});
+  assertShapeEqual(res, {64, 56, 56});
+
+  res = calculateSymbolicShapesOnOp(
+      schema, std::vector<SSAInput>{const_size_1, ss1});
+  assertShapeEqual(res, {64, 56, 56});
+
+  res = calculateSymbolicShapesOnOp(
+      schema, std::vector<SSAInput>{const_size_2, ss1});
+  assertShapeEqual(res, {sym_dim, 56, 56});
+
+  res = calculateSymbolicShapesOnOp(
+      schema, std::vector<SSAInput>{ss_concrete, ss2});
+  assertShapeEqual(res, {64, 56, 56});
+
+  res = calculateSymbolicShapesOnOp(schema, std::vector<SSAInput>{ss2, ss3});
+  assertShapeEqual(res, {sym_dim, 64, sym_dim, sym_dim});
 }
 
 } // namespace jit
