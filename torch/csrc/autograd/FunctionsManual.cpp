@@ -190,6 +190,10 @@ Tensor norm_backward(const Tensor& grad, const Tensor& self, const optional<Scal
 }
 
 Tensor norm_backward(Tensor grad, const Tensor& self, const optional<Scalar> & p_, Tensor norm, IntArrayRef dim, bool keepdim) {
+  // NB: zero entries of `norm` or `self` (for p < 1.0) are replaced with something
+  // arbitrary (such as ones) to avoid division by zero. Though output value will then
+  // later replaced with zeros after division, we cannot simply replace with inf from the
+  // outset because the numerator may also sometimes be zero.
   size_t ndim = self.sizes().size();
   double p = p_.value_or(2.0).toDouble();
   Tensor self_scaled;
@@ -205,31 +209,39 @@ Tensor norm_backward(Tensor grad, const Tensor& self, const optional<Scalar> & p
   } else if (p == 1.0) {
     return self.sgn() * grad;
   } else if (p == 2.0) {
-    self_scaled = self;
-    scale_v = grad / norm;
+    auto norm_eq_zero = norm == 0;
+    return self * (grad / norm.masked_fill(norm_eq_zero, 1.)).masked_fill_(norm_eq_zero, 0);
   } else if (std::isinf(p)) {
     const auto self_isnan = self.isnan();
     const auto norm_isnan = norm.isnan();
     const auto& self_and_norm_isnan = areAnyTensorSubclassLike({self, norm}) ?
       self_isnan.logical_and(norm_isnan) :
       self_isnan.logical_and_(norm_isnan);
-    Tensor is_eq_max = (self.abs() == norm).logical_or_(self_and_norm_isnan).type_as(self);
+    auto is_eq_max = (self.abs() == norm).logical_or_(self_and_norm_isnan).type_as(self);
     self_scaled = self.sgn() * is_eq_max;
-    Tensor nb_max = is_eq_max.count_nonzero(dim);
+    auto nb_max = is_eq_max.count_nonzero(dim);
     if (self.dim() != 0) {
       nb_max = unsqueeze_multiple(nb_max, dim, ndim);
     }
     scale_v = grad / nb_max;
+    return self_scaled * scale_v;
+  } else if (p < 1.0) {
+    auto self_eq_zero = self == 0;
+    self_scaled = self.sgn() * self.abs().masked_fill_(self_eq_zero, 1.).pow_(p - 1).masked_fill_(self_eq_zero, 0);
+    return self_scaled * grad * norm.pow(1 - p);
   } else if (p < 2.0) {
-    self_scaled = self.sgn() * self.abs().pow(p - 1);
-    scale_v = grad / norm.pow(p - 1);
+    auto norm_eq_zero = norm == 0;
+    self_scaled = self.sgn() * self.abs().pow_(p - 1);
+    scale_v = grad / norm.masked_fill(norm_eq_zero, 1.).pow_(p - 1);
+    scale_v.masked_fill_(norm_eq_zero, 0);
+    return self_scaled * scale_v;
   } else {
-    self_scaled = self * self.abs().pow(p - 2);
-    scale_v = grad / norm.pow(p - 1);
+    auto norm_eq_zero = norm == 0;
+    self_scaled = self * self.abs().pow_(p - 2);
+    scale_v = grad / norm.masked_fill(norm_eq_zero, 1.).pow_(p - 1);
+    scale_v.masked_fill_(norm_eq_zero, 0);
+    return self_scaled * scale_v;
   }
-  // handle case at 0 where we return a subgradient containing 0
-  scale_v.masked_fill_(norm == 0, 0);
-  return self_scaled * scale_v;
 }
 
 Tensor linalg_vector_norm_backward(Tensor grad, const Tensor& self, const Scalar& scalar_ord, Tensor norm, const at::OptionalIntArrayRef& opt_dim, bool keepdim) {
