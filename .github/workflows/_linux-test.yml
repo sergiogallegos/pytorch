@@ -32,7 +32,7 @@ jobs:
     steps:
       # [see note: pytorch repo ref]
       - name: Checkout PyTorch
-        uses: pytorch/pytorch/.github/actions/checkout-pytorch@master
+        uses: ./.github/actions/checkout-pytorch
 
       - name: Setup Linux
         uses: ./.github/actions/setup-linux
@@ -157,8 +157,7 @@ jobs:
           name: coredumps-${{ matrix.config }}-${{ matrix.shard }}-${{ matrix.num_shards }}-${{ matrix.runner }}
           retention-days: 14
           if-no-files-found: ignore
-          path:
-            ./**/core.[1-9]*
+          path: ./**/core.[1-9]*
 
       - name: Upload test statistics
         if: always()
