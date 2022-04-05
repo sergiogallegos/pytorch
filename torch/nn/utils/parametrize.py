@@ -655,3 +655,19 @@ def type_before_parametrizations(module: Module) -> type:
         return module.__class__.__bases__[0]
     else:
         return type(module)
+
+def transfer_parametrizations_and_params(from_module: Module, to_module: Module) -> Module:
+    r"""Transfers parametrizations and the parameters they parametrize from from_module
+    to to_module.
+
+     Args:
+        from_module (nn.Module): module to transfer from
+        to_module (nn.Module): module to transfer to
+    """
+    if is_parametrized(from_module):
+        assert isinstance(from_module.parametrizations, ModuleDict)
+        for parameter_name in from_module.parametrizations:
+            for param_func in from_module.parametrizations[parameter_name]:
+                setattr(to_module, parameter_name, from_module.parametrizations[parameter_name].original)
+                register_parametrization(to_module, parameter_name, param_func)
+    return to_module
